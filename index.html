@@ -1284,7 +1284,7 @@ function syncAll() { for (let n = 1; n <= 52; n++) syncWeek(n); syncSummary(); }
 const saveEl = $('#save');
 function setStatus(kind, text) { saveEl.dataset.state = kind; saveEl.textContent = text; }
 
-let store = null, loaded = false, readOnly = false, baseStatus = ['ok', 'Progress is saved'];
+let store = null, loaded = false, readOnly = false, localMode = false, baseStatus = ['ok', 'Progress is saved'];
 const dirty = new Set(), writing = new Set(), timers = {};
 const pre = new Map();                         // edits made before saved progress arrived
 const preFor = n => { if (!pre.has(n)) pre.set(n, { t: new Map(), note: undefined }); return pre.get(n); };
@@ -1329,6 +1329,17 @@ function lock(text) {
 }
 function queueSave(n, delay) {
   if (readOnly || !store) return;
+  // Browser storage is synchronous: save the latest state before a refresh can interrupt it.
+  if (localMode) {
+    try {
+      store.save(n);
+      setStatus('ok', 'Saved in this browser');
+    } catch (e) {
+      setStatus('warn', 'Could not save: check browser storage permissions');
+      console.error('Roadmap save failed:', e);
+    }
+    return;
+  }
   dirty.add(n);
   clearTimeout(timers[n]);
   timers[n] = setTimeout(() => flush(n), delay);
@@ -1354,11 +1365,12 @@ async function flush(n) {
 
 const LS_KEY = 'year-plan-2026-27';
 function startLocal() {
+  localMode = true;
   baseStatus = ['ok', 'Progress is saved in this browser only'];
   let map = {};
   try { map = JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; } catch (e) { map = {}; }
   store = {
-    save: async () => {
+    save: () => {
       const out = {};
       for (let n = 1; n <= 52; n++) if (state[n].done.length || state[n].note || state[n].quiz) out[n] = { done: state[n].done, note: state[n].note, quiz: state[n].quiz };
       localStorage.setItem(LS_KEY, JSON.stringify(out));
